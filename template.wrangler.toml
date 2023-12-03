@@ -1,0 +1,37 @@
+name = "yinyang-pub"
+main = "src/index.js"
+compatibility_date = "2023-11-21"
+compatibility_flags = [ "nodejs_compat" ]
+
+account_id = ""
+workers_dev = true
+
+[limits]
+cpu_ms = 30000
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+id = ""
+binding = "CommonKVStore"
+preview_id = ""
+
+[[kv_namespaces]]
+id = ""
+binding = "ConfigKVStore"
+preview_id = ""
+
+[[kv_namespaces]]
+id = ""
+binding = "RequestsKVStore"
+preview_id = ""
+
+[[queues.producers]]
+binding = "GENIMG_REQ_QUEUE"
+queue = ""
+
+[[r2_buckets]]
+binding = "GEN_IMAGES_BUCKET"
+bucket_name = ""
+preview_bucket_name = ""
