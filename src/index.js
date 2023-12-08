@@ -46,14 +46,16 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, headers, url
 		return new Response(null, { status: 401 });
 	}
 
-	const openai = new OpenAI({ apiKey: openaiKey });
+	const openai = new OpenAI({
+		baseURL: 'https://gateway.ai.cloudflare.com/v1/2878d2dc2b7536339d881d884d27d775/yinyang-open-ai/openai',
+		apiKey: openaiKey,
+	});
 	const prompt = await env.ConfigKVStore.get('prompt');
 	const detailLevel = await env.ConfigKVStore.get('detail');
 	let response;
 
 	try {
 		response = await openai.chat.completions.create({
-			baseURL: 'https://gateway.ai.cloudflare.com/v1/2878d2dc2b7536339d881d884d27d775/yinyang-open-ai/openai',
 			model: 'gpt-4-vision-preview',
 			max_tokens: 4096,
 			messages: [
