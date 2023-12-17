@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { Ai } from '@cloudflare/ai';
 import OpenAI from 'openai';
+import { Router, createCors, error, html } from 'itty-router';
 
 function _logWithCfInfo(method, request, ...args) {
 	const { city, region, continent, asOrganization } = request.cf;
@@ -34,7 +35,7 @@ function _promptFromSentences(sentences, condFunc) {
 		.join('. ');
 }
 
-async function imageAnalysisAndPrompts(requestId, request, env, ai, headers, url) {
+async function imageAnalysisAndPrompts(requestId, request, env, ai, url) {
 	let openaiKey = request.headers.get('X-Yinyang-OpenAI-Key');
 	const allowBuiltIns = JSON.parse(env.USE_BUILTIN_OPENAI_KEY);
 	if (allowBuiltIns.includes(openaiKey)) {
@@ -77,12 +78,12 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, headers, url
 	} catch (e) {
 		const estr = `OpenAI failed: ${e}`;
 		console.error(estr);
-		return new Response(estr, { headers, status: 500 });
+		return new Response(estr, { status: 500 });
 	}
 
 	const { content } = response.choices[0].message;
 	if (!content) {
-		return new Response(null, { headers, status: 418 });
+		return new Response(null, { status: 418 });
 	}
 
 	const threshold = Number.parseFloat(await env.ConfigKVStore.get('goodThreshold'));
@@ -91,16 +92,23 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, headers, url
 		thresholdMod = Number.parseFloat(request.headers.get('X-Yinyang-Threshold-Mod'));
 	}
 
-	const sentences = await Promise.all(
-		content
-			.replaceAll(/\n/g, ' ')
-			.replaceAll(/[^\w\d\.,\- ]/g, '')
-			.split('. ')
-			.map(async (sentence) => ({
-				sentence,
-				sentiment: await _text(ai, sentence, threshold, thresholdMod),
-			})),
-	);
+	let sentences;
+	try {
+		sentences = await Promise.all(
+			content
+				.replaceAll(/\n/g, ' ')
+				.replaceAll(/[^\w\d\.,\- ]/g, '')
+				.split('. ')
+				.map(async (sentence) => ({
+					sentence,
+					sentiment: await _text(ai, sentence, threshold, thresholdMod),
+				})),
+		);
+	} catch (e) {
+		const estr = `Sentiment failed: ${e}`;
+		console.error(estr);
+		return new Response(estr, { status: 500 });
+	}
 
 	const goodPrompt = _promptFromSentences(sentences, (good) => good);
 	const badPrompt = _promptFromSentences(sentences, (good) => !good);
@@ -151,48 +159,112 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, headers, url
 	await env.GENIMG_REQ_QUEUE.send({ requestId });
 
 	logWithCfInfo(request, `Posted image generation request for ${requestId}`);
-	return Response.json(responseObj, { headers });
+	return Response.json(responseObj);
+}
+
+async function fetchAndPersistInput(env, imageUrl) {
+	if (new URL(imageUrl).origin === 'https://inputs.yinyang.computerpho.be') {
+		return imageUrl;
+	}
+
+	const checkRes = await env.DB.prepare('select * from Inputs where SourceUrl = ?').bind(imageUrl).all();
+	if (!checkRes.success) {
+		console.error(`check fail: ${JSON.stringify(checkRes)}`);
+		return;
+	}
+
+	if (checkRes.results.length) {
+		const {
+			results: [{ BucketId }],
+		} = checkRes;
+		console.log(`${imageUrl} is already persisted at ${BucketId}!`);
+		return `https://inputs.yinyang.computerpho.be/${BucketId}`;
+	}
+
+	const resp = await fetch(imageUrl);
+	if (!resp.ok) {
+		console.error(`fetchAndPersistInput ${imageUrl}: ${resp.status}`);
+		console.error(resp.message);
+		return;
+	}
+
+	const cType = resp.headers.get('content-type');
+	if (!cType) {
+		console.error(`No content-type given for ${imageUrl}`);
+		return;
+	}
+
+	const bucketId = `${nanoid()}.${cType.split('/').slice(-1)[0]}`;
+	const { etag, size } = await env.INPUT_IMAGES_BUCKET.put(bucketId, await resp.blob());
+	const insertRes = await env.DB.prepare('insert into Inputs values (?, ?, ?)').bind(imageUrl, cType, bucketId).run();
+
+	if (!insertRes.success || !etag || !size) {
+		console.error(`Bad persist ${insertRes.success} ${etag} ${size}`);
+		return;
+	}
+
+	console.log(`Persisted input ${bucketId}, ${size} bytes, etag: ${etag}`);
+	return `https://inputs.yinyang.computerpho.be/${bucketId}`;
+}
+
+async function checkAllowedHost(env, origin, request) {
+	const allowedHosts = JSON.parse(await env.CommonKVStore.get('allowedHostsJSON'));
+	if (!allowedHosts.includes(origin)) {
+		warnWithCfInfo(request, `Disallowed origin: ${origin}`);
+		return new Response(null, { status: 405 });
+	}
+}
+async function getReqHandler(env, request) {
+	const checkReqId = new URL(request.url).pathname?.slice(1);
+	if (!checkReqId) {
+		return new Response(null, { status: 404 });
+	}
+
+	// no need to deal with eventual consistency here: just let the client try again later!
+	const reqObj = JSON.parse(await env.RequestsKVStore.get(checkReqId));
+
+	if (!reqObj || reqObj.status === 'pending') {
+		return new Response(null, { status: 202 });
+	}
+
+	return Response.json(reqObj);
+}
+
+async function postReqHandler(env, request) {
+	const newReqId = nanoid(Number.parseInt(await env.ConfigKVStore.get('requestIdLengthBytes')));
+	const body = await request.text();
+	logWithCfInfo(request, `imageUrl: ${body}`);
+	let ourUrl = await fetchAndPersistInput(env, body);
+	if (!ourUrl) {
+		console.error(`Bad fetch!! Falling back to original...`);
+		ourUrl = body;
+	}
+	return imageAnalysisAndPrompts(newReqId, request, env, new Ai(env.AI), ourUrl);
 }
 
 export default {
 	async fetch(request, env) {
-		const allowedHosts = JSON.parse(await env.CommonKVStore.get('allowedHostsJSON'));
 		const origin = request.headers.get('origin');
-		if (!allowedHosts.includes(origin)) {
-			warnWithCfInfo(request, `Disallowed origin: ${origin}`);
-			return new Response(null, { status: 405 });
-		}
+		const { preflight, corsify } = createCors({
+			methods: ['GET', 'POST'],
+			origins: [origin],
+		});
 
-		const headers = new Headers();
-		headers.set('Access-Control-Allow-Origin', origin);
+		const router = Router();
 
-		if (!['GET', 'POST', 'OPTIONS'].includes(request.method)) {
-			warnWithCfInfo(request, `Bad method: ${request.method} ${request.url}`);
-			return new Response(null, { headers, status: 405 });
-		}
+		router
+			.all('*', checkAllowedHost.bind(null, env, origin))
+			.all('*', preflight)
+			.get('*', getReqHandler.bind(null, env))
+			.post('/', postReqHandler.bind(null, env))
+			.all('*', () => error(404));
 
-		if (request.method === 'OPTIONS') {
-			headers.set('Access-Control-Allow-Headers', 'X-Yinyang-OpenAI-Key,X-Yinyang-Threshold-Mod');
-			return new Response(null, { status: 200, headers });
-		} else if (request.method === 'GET') {
-			const checkReqId = new URL(request.url).pathname?.slice(1);
-			if (!checkReqId) {
-				return new Response(null, { headers, status: 404 });
-			}
+		const ourError = (...args) => {
+			console.error('Router middleware threw:');
+			console.error(...args);
+			return error(...args);
+		};
 
-			// no need to deal with eventual consistency here: just let the client try again later!
-			const reqObj = JSON.parse(await env.RequestsKVStore.get(checkReqId));
-
-			if (!reqObj || reqObj.status === 'pending') {
-				return new Response(null, { headers, status: 202 });
-			}
-
-			return Response.json(reqObj, { headers });
-		} else if (request.method === 'POST') {
-			const newReqId = nanoid(Number.parseInt(await env.ConfigKVStore.get('requestIdLengthBytes')));
-			const body = await request.text();
-			logWithCfInfo(request, `imageUrl: ${body}`);
-			return imageAnalysisAndPrompts(newReqId, request, env, new Ai(env.AI), headers, body);
-		}
+		return router.handle(request).then(html).catch(ourError).then(corsify);
 	},
 };
