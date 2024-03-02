@@ -35,7 +35,7 @@ function _promptFromSentences(sentences, condFunc) {
 		.join('. ');
 }
 
-async function imageAnalysisAndPrompts(requestId, request, env, ai, url) {
+async function imageAnalysisAndPrompts(requestId, request, env, ai, url, originalUrl) {
 	let openaiKey = request.headers.get('X-Yinyang-OpenAI-Key');
 	const allowBuiltIns = JSON.parse(env.USE_BUILTIN_OPENAI_KEY);
 	if (allowBuiltIns.includes(openaiKey)) {
@@ -132,6 +132,7 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, url) {
 	const responseObj = {
 		input: {
 			url,
+			originalUrl,
 			threshold,
 			thresholdMod,
 		},
@@ -239,7 +240,7 @@ async function postReqHandler(env, request) {
 		console.error(`Bad fetch!! Falling back to original...`);
 		ourUrl = body;
 	}
-	return imageAnalysisAndPrompts(newReqId, request, env, new Ai(env.AI), ourUrl);
+	return imageAnalysisAndPrompts(newReqId, request, env, new Ai(env.AI), ourUrl, body);
 }
 
 export default {
