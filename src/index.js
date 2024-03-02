@@ -13,7 +13,7 @@ const warnWithCfInfo = _logWithCfInfo.bind(null, 'warn');
 
 async function _text(ai, userText, threshold, thresholdMod) {
 	const inputs = { text: userText };
-	let response = await ai.run('@cf/huggingface/distilbert-sst-2-int8', inputs);
+	let response = await ai.run(await env.ConfigKVStore.get('textClassificationModel'), inputs);
 
 	if (thresholdMod) {
 		threshold += thresholdMod / 10.0;
@@ -57,7 +57,7 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, url, origina
 
 	try {
 		response = await openai.chat.completions.create({
-			model: 'gpt-4-vision-preview',
+			model: await env.ConfigKVStore.get('imageToTextModel'),
 			max_tokens: 4096,
 			messages: [
 				{
@@ -243,6 +243,18 @@ async function postReqHandler(env, request) {
 	return imageAnalysisAndPrompts(newReqId, request, env, new Ai(env.AI), ourUrl, body);
 }
 
+const ALLOWED_MODEL_KEYS = new Set(['textToImageModel', 'imageToTextModel', 'textClassificationModel']);
+
+async function getModel(env, request) {
+	const keyName = request.params.modelName;
+
+	if (!ALLOWED_MODEL_KEYS.has(keyName)) {
+		return new Response(null, { status: 404 });
+	}
+
+	return new Response((await env.ConfigKVStore.get(keyName)).split('/').slice(-1)[0]);
+}
+
 export default {
 	async fetch(request, env) {
 		const origin = request.headers.get('origin');
@@ -256,6 +268,8 @@ export default {
 		router
 			.all('*', checkAllowedHost.bind(null, env, origin))
 			.all('*', preflight)
+			.get('/model/:modelName', getModel.bind(null, env))
+			// specific routes must be defined *above* here!
 			.get('*', getReqHandler.bind(null, env))
 			.post('/', postReqHandler.bind(null, env))
 			.all('*', () => error(404));
