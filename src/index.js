@@ -11,9 +11,9 @@ function _logWithCfInfo(method, request, ...args) {
 const logWithCfInfo = _logWithCfInfo.bind(null, 'log');
 const warnWithCfInfo = _logWithCfInfo.bind(null, 'warn');
 
-async function _text(ai, userText, threshold, thresholdMod) {
+async function _text(model, ai, userText, threshold, thresholdMod) {
 	const inputs = { text: userText };
-	let response = await ai.run(await env.ConfigKVStore.get('textClassificationModel'), inputs);
+	let response = await ai.run(model, inputs);
 
 	if (thresholdMod) {
 		threshold += thresholdMod / 10.0;
@@ -92,6 +92,7 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, url, origina
 		thresholdMod = Number.parseFloat(request.headers.get('X-Yinyang-Threshold-Mod'));
 	}
 
+	const textClassModel = await env.ConfigKVStore.get('textClassificationModel');
 	let sentences;
 	try {
 		sentences = await Promise.all(
@@ -101,7 +102,7 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, url, origina
 				.split('. ')
 				.map(async (sentence) => ({
 					sentence,
-					sentiment: await _text(ai, sentence, threshold, thresholdMod),
+					sentiment: await _text(textClassModel, ai, sentence, threshold, thresholdMod),
 				})),
 		);
 	} catch (e) {
@@ -146,6 +147,7 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, url, origina
 			openai_tokens_used: total_tokens,
 			openai_full_model_used: model,
 			openai_prompt: prompt,
+			text_classification_model_used: textClassModel,
 		},
 	};
 
