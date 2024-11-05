@@ -52,14 +52,16 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, url, origina
 	});
 	const prompt = await env.ConfigKVStore.get('prompt');
 	const detailLevel = await env.ConfigKVStore.get('detail');
+	const ittModel = await env.ConfigKVStore.get('imageToTextModel');
 	let response;
 	let retries = 3;
 	let estr;
 	
 	while (retries > 0) {
 		try {
+			console.log(`Querying OpenAI with model ${ittModel}`);
 			response = await openai.chat.completions.create({
-				model: await env.ConfigKVStore.get('imageToTextModel'),
+				model: ittModel,
 				max_tokens: 4096,
 				messages: [
 					{
