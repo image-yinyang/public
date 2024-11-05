@@ -54,30 +54,39 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, url, origina
 	const prompt = await env.ConfigKVStore.get('prompt');
 	const detailLevel = await env.ConfigKVStore.get('detail');
 	let response;
-
-	try {
-		response = await openai.chat.completions.create({
-			model: await env.ConfigKVStore.get('imageToTextModel'),
-			max_tokens: 4096,
-			messages: [
-				{
-					role: 'user',
-					content: [
-						{ type: 'text', text: prompt },
-						{
-							type: 'image_url',
-							image_url: {
-								url,
-								detail: detailLevel,
+	let retries = 3;
+	let estr;
+	
+	while (retries > 0) {
+		try {
+			response = await openai.chat.completions.create({
+				model: await env.ConfigKVStore.get('imageToTextModel'),
+				max_tokens: 4096,
+				messages: [
+					{
+						role: 'user',
+						content: [
+							{ type: 'text', text: prompt },
+							{
+								type: 'image_url',
+								image_url: {
+									url,
+									detail: detailLevel,
+								},
 							},
-						},
-					],
-				},
-			],
-		});
-	} catch (e) {
-		const estr = `OpenAI failed: ${e}`;
-		console.error(estr);
+						],
+					},
+				],
+			});
+		} catch (e) {
+			retries--;
+			estr = `OpenAI failed: ${e}${retries > 0 ? ` (${retries} retries remain)` : ''}`; 
+			console.error(estr);
+		}
+	}
+
+	if (!response) {
+		console.error(`OpenAI failed after retries (${retries}), last error: "${estr}"`);
 		return new Response(estr, { status: 500 });
 	}
 
