@@ -79,6 +79,10 @@ async function imageAnalysisAndPrompts(requestId, request, env, ai, url, origina
 					},
 				],
 			});
+
+			if (response) {
+				break;
+			}
 		} catch (e) {
 			retries--;
 			estr = `OpenAI failed: ${e}${retries > 0 ? ` (${retries} retries remain)` : ''}`; 
