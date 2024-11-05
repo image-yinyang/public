@@ -5,6 +5,10 @@ compatibility_flags = [ "nodejs_compat" ]
 
 workers_dev = true
 
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [limits]
 cpu_ms = 30000
 
