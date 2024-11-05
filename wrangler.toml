@@ -3,8 +3,6 @@ main = "src/index.js"
 compatibility_date = "2023-11-21"
 compatibility_flags = [ "nodejs_compat" ]
 
-# are these two _necessary_ for R2? if not, remove!
-account_id = "${CF_ACCOUNT_ID}"
 workers_dev = true
 
 [limits]
