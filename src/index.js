@@ -1,5 +1,4 @@
 import { nanoid } from 'nanoid';
-import { Ai } from '@cloudflare/ai';
 import OpenAI from 'openai';
 import { Router, createCors, error, html } from 'itty-router';
 
@@ -251,7 +250,7 @@ async function postReqHandler(env, request) {
 		console.error(`Bad fetch!! Falling back to original...`);
 		ourUrl = body;
 	}
-	return imageAnalysisAndPrompts(newReqId, request, env, new Ai(env.AI), ourUrl, body);
+	return imageAnalysisAndPrompts(newReqId, request, env, env.AI, ourUrl, body);
 }
 
 const ALLOWED_MODEL_KEYS = new Set(['textToImageModel', 'imageToTextModel', 'textClassificationModel']);
