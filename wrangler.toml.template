@@ -1,0 +1,47 @@
+name = "yinyang-pub"
+main = "src/index.js"
+compatibility_date = "2023-11-21"
+compatibility_flags = [ "nodejs_compat" ]
+
+# are these two _necessary_ for R2? if not, remove!
+account_id = "${CF_ACCOUNT_ID}"
+workers_dev = true
+
+[limits]
+cpu_ms = 30000
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+id = "852ec36b55df42eeaffbe8b8ed60cb28"
+binding = "CommonKVStore"
+preview_id = "26e4880c5304452a9a82f649c0c17c67"
+
+[[kv_namespaces]]
+id = "6606e53b405b4d9b828e527469a837c8"
+binding = "ConfigKVStore"
+preview_id = "a6bed395c0424cfead2df4b4e0147783"
+
+[[kv_namespaces]]
+id = "cbf0eaa92c7347479a10a23a8844e69b"
+binding = "RequestsKVStore"
+preview_id = "06c9f10af8634591a94baef3a1ab953d"
+
+[[queues.producers]]
+binding = "GENIMG_REQ_QUEUE"
+queue = "yinyang-genimg-req"
+
+[[r2_buckets]]
+binding = "GEN_IMAGES_BUCKET"
+bucket_name = "yinyang-generated-images"
+preview_bucket_name = "yinyang-generated-images-dev-preview"
+
+[[r2_buckets]]
+binding = "INPUT_IMAGES_BUCKET"
+bucket_name = "yinyang-input-images"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "yinyang"
+database_id = "87a73902-ab87-4a4e-8d00-2dd522da9600"
